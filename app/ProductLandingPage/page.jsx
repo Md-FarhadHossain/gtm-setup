@@ -1,77 +1,95 @@
-'use client'; 
+'use client';
 
 import { useEffect, useState } from 'react';
 
-const gtmEvent = (eventName, eventData) => {
-  window.dataLayer = window.dataLayer || [];
-  window.dataLayer.push({
-    event: eventName,
-    ...eventData,
-  });
+// GTM Helper ফাংশন
+const gtmEvent = (eventName, eventData = {}) => {
+  // নিশ্চিত করুন কোডটি শুধুমাত্র ব্রাউজারে রান হচ্ছে
+  if (typeof window !== 'undefined') {
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push({
+      event: eventName,
+      ...eventData,
+    });
+  }
 };
 
 const ProductLandingPage = () => {
   const [showCheckout, setShowCheckout] = useState(false);
   const [checkoutStarted, setCheckoutStarted] = useState(false);
-
-  // নতুন স্টেট: ক্লায়েন্টের IP এবং User Agent স্টোর করার জন্য
-  const [clientInfo, setClientInfo] = useState({ ip: '', userAgent: '' });
-
   const [customerDetails, setCustomerDetails] = useState({
-    firstName: '',
-    lastName: '',
-    phone: '',
-    email: '',
-    address: '',
-    city: 'Dhaka',
-    postCode: '',
-    country: 'BD',
-    state: 'Dhaka'
+    firstName: '', lastName: '', phone: '', email: '', address: '', city: 'Dhaka', postCode: '', country: 'BD', state: 'Dhaka'
   });
   const [shippingLocation, setShippingLocation] = useState('inside_dhaka');
   
-  const product = { /* ... আপনার প্রোডাক্টের তথ্য অপরিবর্তিত ... */ };
+  const product = {
+    id: 'BOOK_MKT_001', name: 'মার্কেটিং এর বই', brand: 'সেরা প্রকাশক', category: 'বই', category2: 'মার্কেটিং', variant: 'Paperback', price: 590.00,
+  };
 
-  // নতুন useEffect: পেজ লোড হওয়ার সাথে সাথে IP এবং User Agent সংগ্রহ করবে
+  // *** মূল পরিবর্তন এখানে ***
+  // পেজ লোড হওয়ার সাথে সাথেই ক্লায়েন্টের তথ্য dataLayer-এ পাঠানো হবে
   useEffect(() => {
-    // User Agent সেট করা
-    setClientInfo(prev => ({ ...prev, userAgent: navigator.userAgent }));
-
-    // IP অ্যাড্রেসের জন্য API কল করা
-    const fetchIp = async () => {
+    const setClientInfo = async () => {
       try {
         const response = await fetch('/api/ip');
         const data = await response.json();
-        setClientInfo(prev => ({ ...prev, ip: data.ip }));
+        
+        // IP ও User Agent পাওয়ার সাথে সাথে dataLayer এ পুশ করা হচ্ছে
+        window.dataLayer = window.dataLayer || [];
+        window.dataLayer.push({
+          'event': 'client_info_ready', // এটি একটি কাস্টম ইভেন্ট, GTM-এ এটি দেখতে পাবেন
+          'visitorIP': data.ip,
+          'browserName': navigator.userAgent,
+        });
+
       } catch (error) {
-        console.error('Error fetching IP:', error);
-        setClientInfo(prev => ({ ...prev, ip: '0.0.0.0' })); // fallback
+        console.error('Failed to set client info:', error);
       }
     };
-    
-    fetchIp();
-  }, []);
-  
-  // view_item, add_to_cart, begin_checkout ইভেন্টগুলো অপরিবর্তিত থাকবে
-  useEffect(() => { /* view_item এর কোড এখানে অপরিবর্তিত থাকবে */ }, []);
-  const handleAddToCart = () => { /* add_to_cart এর কোড এখানে অপরিবর্তিত থাকবে */ };
-  const handleBeginCheckout = () => { /* begin_checkout এর কোড এখানে অপরিবর্তিত থাকবে */ };
 
-  // ... (বাকি ফাংশন যেমন handleInputChange অপরিবর্তিত থাকবে)
-  const handleInputChange = (e) => { setCustomerDetails({ ...customerDetails, [e.target.name]: e.target.value }); };
+    setClientInfo();
 
-  // ৪. purchase ইভেন্ট (IP এবং User Agent সহ চূড়ান্ত আপডেট)
+    // view_item ইভেন্ট ফায়ার করা হচ্ছে
+    gtmEvent('view_item', {
+      ecommerce: {
+        currency: 'BDT', value: product.price, items: [{
+          item_id: product.id, item_name: product.name, item_brand: product.brand,
+          item_category: product.category, price: product.price, quantity: 1
+        }]
+      }
+    });
+
+  }, []); // [] মানে এই ইফেক্ট শুধুমাত্র একবার রান হবে
+
+  const handleAddToCart = () => {
+    gtmEvent('add_to_cart', {
+      ecommerce: { currency: 'BDT', value: product.price, items: [{ item_id: product.id, item_name: product.name, price: product.price, quantity: 1 }] }
+    });
+    setShowCheckout(true);
+  };
+
+  const handleBeginCheckout = () => {
+    if (!checkoutStarted) {
+      gtmEvent('begin_checkout', {
+        ecommerce: { currency: 'BDT', value: product.price, items: [{ item_id: product.id, item_name: product.name, price: product.price, quantity: 1 }] }
+      });
+      setCheckoutStarted(true);
+    }
+  };
+
+  const handleInputChange = (e) => {
+    setCustomerDetails({ ...customerDetails, [e.target.name]: e.target.value });
+  };
+
+  // purchase ইভেন্ট (এখন অনেক সহজ)
   const handlePurchase = (e) => {
     e.preventDefault();
     const shippingCost = shippingLocation === 'inside_dhaka' ? 60 : 99;
     const totalValue = product.price + shippingCost;
     const transactionId = `TXN-${Date.now()}`;
 
-    window.dataLayer = window.dataLayer || [];
-    window.dataLayer.push({
-      event: 'purchase',
-      
-      // *** আপনার GTM টেমপ্লেট অনুযায়ী ডেটা যুক্ত করা হয়েছে ***
+    // IP বা User Agent এখানে পাঠানোর আর দরকার নেই, কারণ GTM এটি আগেই পেয়ে গেছে
+    gtmEvent('purchase', {
       customerBillingFirstName: customerDetails.firstName,
       customerBillingLastName: customerDetails.lastName,
       customerBillingEmail: customerDetails.email,
@@ -79,53 +97,43 @@ const ProductLandingPage = () => {
       customerBillingPostcode: customerDetails.postCode,
       customerBillingCountry: customerDetails.country,
       customerBillingState: customerDetails.state,
-
-      orderData: {
-          customer: {
-              billing: {
-                  phone: customerDetails.phone
-              }
-          }
-      },
-
-      // *** নতুন দুটি কী (key) যুক্ত করা হয়েছে ***
-      visitorIP: clientInfo.ip, // আপনার GTM এটিকে DLV-Client IP Address হিসেবে ধরবে
-      browserName: clientInfo.userAgent, // আপনার GTM এটিকে DLV-Client User Agent হিসেবে ধরবে
-      
-      // ecommerce অবজেক্ট অপরিবর্তিত
+      orderData: { customer: { billing: { phone: customerDetails.phone } } },
       ecommerce: {
-        transaction_id: transactionId,
-        affiliation: 'আপনার ওয়েবসাইটের নাম',
-        value: totalValue,
-        tax: 0,
-        shipping: shippingCost,
-        currency: 'BDT',
-        items: [{
-          item_id: product.id,
-          item_name: product.name,
-          price: product.price,
-          quantity: 1
-        }],
+        transaction_id: transactionId, affiliation: 'আপনার ওয়েবসাইটের নাম', value: totalValue, tax: 0, shipping: shippingCost, currency: 'BDT',
+        items: [{ item_id: product.id, item_name: product.name, item_brand: product.brand, item_category: product.category, price: product.price, quantity: 1 }],
       }
     });
-    
-    console.log('Final Data pushed to dataLayer:', window.dataLayer[window.dataLayer.length - 1]);
+
+    console.log('Purchase Event Fired. Check GTM Preview.');
     alert('আপনার অর্ডারটি সফলভাবে সম্পন্ন হয়েছে!');
   };
-  
+
   return (
-    // ... আপনার JSX বা HTML কোড এখানে অপরিবর্তিত থাকবে
-    <main style={{ padding: '2rem' }}>
+    <main style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
       <h1>{product.name}</h1>
+      <p>দাম: ৳{product.price}</p>
       {!showCheckout ? (
-        <button onClick={handleAddToCart}>এখনই অর্ডার করুন</button>
+        <button onClick={handleAddToCart} style={{ padding: '10px 20px', fontSize: '1.2rem' }}>
+          এখনই অর্ডার করুন
+        </button>
       ) : (
         <form onSubmit={handlePurchase} style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '400px' }}>
-          {/* ... আপনার সমস্ত ইনপুট ফিল্ড অপরিবর্তিত থাকবে ... */}
+          <h3>অর্ডার করতে ফর্মটি পূরণ করুন:</h3>
           <input name="firstName" placeholder="First Name" onFocus={handleBeginCheckout} onChange={handleInputChange} required />
-          <input name="phone" placeholder="Phone Number" onFocus={handleBeginCheckout} onChange={handleInputChange} required />
-          {/* ... */}
-          <button type="submit">অর্ডার কনফার্ম করুন</button>
+          <input name="lastName" placeholder="Last Name" onFocus={handleBeginCheckout} onChange={handleInputChange} required />
+          <input type="tel" name="phone" placeholder="Phone Number" onFocus={handleBeginCheckout} onChange={handleInputChange} required />
+          <input type="email" name="email" placeholder="Email Address" onFocus={handleBeginCheckout} onChange={handleInputChange} />
+          <textarea name="address" placeholder="Full Address" onFocus={handleBeginCheckout} onChange={handleInputChange} required />
+          <input name="city" placeholder="City" onFocus={handleBeginCheckout} onChange={handleInputChange} required />
+          <input name="postCode" placeholder="Postal Code" onFocus={handleBeginCheckout} onChange={handleInputChange} />
+          <input name="state" placeholder="State/Division" onFocus={handleBeginCheckout} onChange={handleInputChange} required />
+          <select value={shippingLocation} onChange={(e) => setShippingLocation(e.target.value)}>
+            <option value="inside_dhaka">ঢাকার ভিতরে (ডেলিভারি চার্জ ৳৬০)</option>
+            <option value="outside_dhaka">ঢাকার বাহিরে (ডেলিভারি চার্জ ৳৯৯)</option>
+          </select>
+          <button type="submit" style={{ padding: '10px 20px', fontSize: '1rem' }}>
+            অর্ডার কনফার্ম করুন
+          </button>
         </form>
       )}
     </main>
