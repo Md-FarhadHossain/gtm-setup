@@ -1,7 +1,16 @@
 'use client'; // Next.js App Router এর জন্য এটি জরুরি
 
 import { useEffect, useState } from 'react';
-import { gtmEvent } from '../lib/gtm'; // helper ফাংশন ইম্পোর্ট করুন
+
+// ধরে নিচ্ছি gtm.js ফাইলটি lib ফোল্ডারে আছে
+const gtmEvent = (eventName, eventData) => {
+  window.dataLayer = window.dataLayer || [];
+  window.dataLayer.push({
+    event: eventName,
+    ...eventData,
+  });
+};
+
 
 const ProductLandingPage = () => {
   // UI State Management
@@ -15,7 +24,10 @@ const ProductLandingPage = () => {
     phone: '',
     email: '',
     address: '',
-    city: 'Dhaka', // Default City
+    city: 'Dhaka',
+    postCode: '',
+    country: 'BD',
+    state: 'Dhaka' // GTM টেমপ্লেটে State ভ্যারিয়েবল আছে
   });
   const [shippingLocation, setShippingLocation] = useState('inside_dhaka');
   
@@ -30,7 +42,7 @@ const ProductLandingPage = () => {
     price: 590.00,
   };
 
-  // ১. view_item ইভেন্ট (পেজ লোড হলে)
+  // ১. view_item ইভেন্ট (পেজ লোড হলে) - এটি অপরিবর্তিত
   useEffect(() => {
     gtmEvent('view_item', {
       ecommerce: {
@@ -48,9 +60,9 @@ const ProductLandingPage = () => {
         }]
       }
     });
-  }, []); // [] মানে এই ইফেক্ট শুধুমাত্র একবার রান হবে
+  }, []);
 
-  // ২. add_to_cart ইভেন্ট ("অর্ডার করুন" বাটনে ক্লিক করলে)
+  // ২. add_to_cart ইভেন্ট - এটি অপরিবর্তিত
   const handleAddToCart = () => {
     gtmEvent('add_to_cart', {
       ecommerce: {
@@ -64,10 +76,10 @@ const ProductLandingPage = () => {
         }]
       }
     });
-    setShowCheckout(true); // চেকআউট ফর্মটি দেখান
+    setShowCheckout(true);
   };
   
-  // ৩. begin_checkout ইভেন্ট (ফর্ম পূরণ শুরু করলে)
+  // ৩. begin_checkout ইভেন্ট - এটি অপরিবর্তিত
   const handleBeginCheckout = () => {
     if (!checkoutStarted) {
       gtmEvent('begin_checkout', {
@@ -90,14 +102,37 @@ const ProductLandingPage = () => {
     setCustomerDetails({ ...customerDetails, [e.target.name]: e.target.value });
   };
   
-  // ৪. purchase ইভেন্ট (ফর্ম সাবমিট করলে)
+  // ৪. purchase ইভেন্ট (আপনার GTM টেমপ্লেট অনুযায়ী পরিবর্তিত)
   const handlePurchase = (e) => {
     e.preventDefault();
     const shippingCost = shippingLocation === 'inside_dhaka' ? 60 : 99;
     const totalValue = product.price + shippingCost;
     const transactionId = `TXN-${Date.now()}`;
 
-    gtmEvent('purchase', {
+    // dataLayer-কে আপনার GTM ভ্যারিয়েবলের গঠন অনুযায়ী সাজানো হয়েছে
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push({
+      event: 'purchase',
+      
+      // *** মূল পরিবর্তন এখানে ***
+      // কাস্টমারের তথ্য GTM ভ্যারিয়েবলের নাম অনুযায়ী top-level এ দেওয়া হয়েছে
+      customerBillingFirstName: customerDetails.firstName,
+      customerBillingLastName: customerDetails.lastName,
+      customerBillingEmail: customerDetails.email,
+      customerBillingCity: customerDetails.city,
+      customerBillingPostcode: customerDetails.postCode,
+      customerBillingCountry: customerDetails.country,
+      customerBillingState: customerDetails.state,
+
+      orderData: {
+          customer: {
+              billing: {
+                  phone: customerDetails.phone
+              }
+          }
+      },
+      
+      // ecommerce অবজেক্ট আগের মতোই আছে, কারণ আপনার GTM এটি এভাবেই পড়ছে
       ecommerce: {
         transaction_id: transactionId,
         affiliation: 'আপনার ওয়েবসাইটের নাম',
@@ -113,23 +148,13 @@ const ProductLandingPage = () => {
           price: product.price,
           quantity: 1
         }],
-        // ঐচ্ছিক: Enhanced Conversions এর জন্য কাস্টমার ডেটা
-        user_data: {
-          email: customerDetails.email,
-          phone_number: customerDetails.phone,
-          address: {
-            first_name: customerDetails.firstName,
-            last_name: customerDetails.lastName,
-            street: customerDetails.address,
-            city: customerDetails.city,
-            country: 'BD'
-          }
-        }
       }
     });
     
+    // Developer Console এ ডেটা পরীক্ষা করার জন্য
+    console.log('Final Data pushed to dataLayer:', window.dataLayer[window.dataLayer.length - 1]);
+
     alert('আপনার অর্ডারটি সফলভাবে সম্পন্ন হয়েছে!');
-    // এখানে আপনি API তে ডেটা পাঠানোর কোড লিখবেন
   };
   
   return (
@@ -150,6 +175,10 @@ const ProductLandingPage = () => {
           <input type="tel" name="phone" placeholder="Phone Number" onFocus={handleBeginCheckout} onChange={handleInputChange} required />
           <input type="email" name="email" placeholder="Email Address" onFocus={handleBeginCheckout} onChange={handleInputChange} />
           <textarea name="address" placeholder="Full Address" onFocus={handleBeginCheckout} onChange={handleInputChange} required />
+          <input name="city" placeholder="City" onFocus={handleBeginCheckout} onChange={handleInputChange} required />
+          <input name="postCode" placeholder="Postal Code" onFocus={handleBeginCheckout} onChange={handleInputChange} />
+          <input name="state" placeholder="State/Division" onFocus={handleBeginCheckout} onChange={handleInputChange} required />
+          
           <select value={shippingLocation} onChange={(e) => setShippingLocation(e.target.value)}>
             <option value="inside_dhaka">ঢাকার ভিতরে (ডেলিভারি চার্জ ৳৬০)</option>
             <option value="outside_dhaka">ঢাকার বাহিরে (ডেলিভারি চার্জ ৳৯৯)</option>
